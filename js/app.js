@@ -359,6 +359,31 @@ async function editProject(pid){
   route();
 }
 
+/* ---------------- 定位 / 导航 ---------------- */
+function navUrlFor(p){
+  if(p.lat == null || p.lng == null) return null;
+  const name = encodeURIComponent(p.name || '项目位置');
+  return `https://uri.amap.com/marker?position=${p.lng},${p.lat}&name=${name}&src=admeasure&coordinate=gaode&callnative=1`;
+}
+async function locateProject(pid){
+  const p = await DB.get('projects', pid);
+  if(!p) return;
+  if(!navigator.geolocation){ toast('此设备不支持定位','err'); return; }
+  toast('正在获取定位…');
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    let addr = p.address || '';
+    try{
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh-CN&zoom=18`, {headers:{'Accept':'application/json'}});
+      const j = await r.json();
+      if(j && j.display_name) addr = j.display_name;
+    }catch(e){ /* 保留原地址 */ }
+    await DB.put('projects', {...p, lat, lng, address:addr, updatedAt:Date.now()});
+    toast('定位完成，已记录坐标','ok');
+    route();
+  }, err => { toast('定位失败：' + (err.message || '已拒绝权限'), 'err'); },
+     {enableHighAccuracy:true, timeout:10000});
+}
 async function delProject(pid){
   const points = await DB.byIndex('points','projectId',pid);
   let photoN = 0;
@@ -401,12 +426,15 @@ async function renderProject(pid){
         ${infoItem('地址', p.address||(client?client.address:''), true)}
         ${infoItem('测量日期', fmtDate(p.measureDate||p.createdAt))}
         ${infoItem('测量人', p.measurer)}
+        ${(p.lat!=null&&p.lng!=null)?infoItem('坐标', `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`):''}
         ${p.remark?infoItem('备注', p.remark, true):''}
       </div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <select style="width:auto;height:34px" onchange="changeStatus('${pid}',this.value)">
           ${PROJECT_STATUS.map(s=>`<option value="${s.v}" ${p.status===s.v?'selected':''}>状态：${s.n}</option>`).join('')}
         </select>
+        <button class="btn btn-ghost" onclick="locateProject('${pid}')">📍 定位</button>
+        ${(p.lat!=null&&p.lng!=null)?`<a class="btn btn-ghost" href="${navUrlFor(p)}" target="_blank" rel="noopener">🧭 导航</a>`:''}
         <button class="btn btn-ghost" onclick="editProject('${pid}')">✎ 编辑项目</button>
         <button class="btn btn-danger" onclick="delProject('${pid}')">🗑 删除</button>
         <button class="btn btn-primary" style="margin-left:auto" onclick="openReport('${pid}')">📄 测量报告</button>
@@ -481,9 +509,44 @@ function measureListHTML(list){
         <span class="muted">${meta.detail(m.detail||{})||''} · ${fmtDateTime(m.createdAt)}</span>
       </div>
       <span class="m-val">${meta.fmt(m.value)}</span>
+      <button class="icon-btn" title="转为尺寸记录" onclick="measureToDim('${m.id}')">➡️</button>
       <button class="icon-btn" title="删除" onclick="delMeasure('${m.id}')">🗑</button>
     </div>`;
   }).join('')}</div>`;
+}
+async function measureToDim(mid){
+  const m = await DB.get('measures', mid);
+  if(!m) return;
+  const points = await DB.byIndex('points','projectId', m.projectId);
+  if(!points.length){ toast('请先在该项目下添加测量点','err'); return; }
+  const meta = MEASURE_META[m.kind] || {n:m.kind, detail:()=>''};
+  let defLabel = meta.n, defWidth = '', defRemark = '';
+  if(m.unit === 'm'){ defWidth = Math.round(m.value*100); }
+  else if(m.unit === '°'){ defRemark = `${meta.n} ${m.value}°`; defLabel = meta.n; }
+  if(m.kind === 'ar-area'){
+    defWidth = Math.round(Math.sqrt(m.value)*100);
+    defRemark = `由面积 ${m.value.toFixed(2)}㎡ 估算边长(参考)`; defLabel = 'AR测面积';
+  }
+  const data = await formModal({
+    title:'转为尺寸记录',
+    fields:[
+      {key:'pointId', label:'所属测量点', type:'select', required:true,
+        options: points.map(pt=>({v:pt.id, n:pt.name || pt.type || pt.id}))},
+      {key:'label', label:'部位名称', value:defLabel, required:true, full:true},
+      {key:'width', label:'宽 (cm)', value:defWidth, type:'number', step:'0.1'},
+      {key:'qty', label:'数量', value:1, type:'number'},
+      {key:'material', label:'材质 / 工艺', value:'', full:true},
+      {key:'remark', label:'备注', value:defRemark, textarea:true, full:true},
+    ],
+  });
+  if(!data) return;
+  await DB.put('dimensions', {
+    id:uid(), pointId:data.pointId, label:data.label,
+    width: data.width ? num(data.width) : '', height:'',
+    qty: num(data.qty)||1, material:data.material||'', remark:data.remark||'', createdAt:Date.now(),
+  });
+  toast('已转为尺寸记录','ok');
+  route();
 }
 async function delMeasure(mid){
   const ok = await Modal.confirm({title:'删除记录', msg:'确定删除这条仪器测量记录吗？', okText:'删除'});
@@ -706,9 +769,23 @@ async function handlePhotoFiles(files, openFirst){
   const arr = [...files];
   const created = [];
   toast('正在处理照片…');
+  // 现场水印所需信息：测量点 → 项目（名称/地址/坐标）
+  let wmLines = [fmtDateTime(Date.now())];
+  try{
+    const pt = await DB.get('points', ptid);
+    const proj = pt ? await DB.get('projects', pt.projectId) : null;
+    if(proj){
+      if(proj.name) wmLines.push(proj.name);
+      if(proj.address) wmLines.push(proj.address);
+      if(proj.lat != null && proj.lng != null)
+        wmLines.push(`📍 ${proj.lat.toFixed(5)}, ${proj.lng.toFixed(5)}`);
+    }
+  }catch(e){}
   for(const f of arr){
     try{
       const im = await processPhotoFile(f);
+      im.dataUrl = await watermarkPhoto(im.dataUrl, wmLines);
+      im.thumb = await watermarkPhoto(im.thumb, wmLines);
       const ph = {id:uid(), pointId:ptid, annotations:[],
                   kind: mode==='count'?'count':'photo',
                   countMarks: mode==='count'?[]:undefined,

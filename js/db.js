@@ -145,3 +145,29 @@ function loadImage(src){
     img.src = src;
   });
 }
+
+/* 给照片加现场水印（时间 / 项目名 / 地址 / 坐标），返回新 dataUrl */
+async function watermarkPhoto(srcDataUrl, lines){
+  try{
+    const img = await loadImage(srcDataUrl);
+    const W = img.width, H = img.height;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0, W, H);
+    if(!lines || !lines.length) return srcDataUrl;
+    const pad = Math.round(W * 0.025);
+    const fs = Math.max(13, Math.round(W * 0.030));
+    const lineH = fs * 1.32;
+    const barH = pad * 2 + lineH * lines.length;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, H - barH, W, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = `${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    ctx.textBaseline = 'top';
+    lines.forEach((t, i) => ctx.fillText(t, pad, H - barH + pad + i * lineH));
+    return cv.toDataURL('image/jpeg', 0.72);
+  }catch(e){
+    console.error('watermark failed', e);
+    return srcDataUrl;
+  }
+}
