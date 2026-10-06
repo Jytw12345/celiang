@@ -4,9 +4,13 @@
 ================================================================== */
 const ScreenRuler = (() => {
   const KEY = 'admeasure_px_per_cm';
+  const CAL_OK = 'admeasure_px_cal';
+  const DEF_PXCM = 96/2.54;            // 默认按 96 DPI 假设（与多数在线尺一致，近似刻度）
   let layer, raf=null;
-  const getPxCm = () => num(localStorage.getItem(KEY)) || 0;
-  const setPxCm = v => localStorage.setItem(KEY, v);
+  // 默认就有刻度（约 96 DPI），校准后才是真实厘米
+  const getPxCm = () => num(localStorage.getItem(KEY)) || DEF_PXCM;
+  const isCal = () => localStorage.getItem(CAL_OK)==='1' && num(localStorage.getItem(KEY))>0;
+  const setPxCm = v => { localStorage.setItem(KEY, v); localStorage.setItem(CAL_OK,'1'); };
 
   function shell(title, sub, mode){
     layer = $('#tool-layer');
@@ -21,6 +25,7 @@ const ScreenRuler = (() => {
             </div>
             <div class="sr-tabs">
               <button data-m="ruler" class="${mode==='ruler'?'sel':''}">尺子</button>
+              <button data-m="measure" class="${mode==='measure'?'sel':''}">测距</button>
               <button data-m="prot" class="${mode==='prot'?'sel':''}">量角器</button>
               <button data-m="cal" class="${mode==='cal'?'sel':''}">校准</button>
             </div>
@@ -32,6 +37,7 @@ const ScreenRuler = (() => {
     $('#tlClose').onclick = close;
     $$('.sr-tabs button').forEach(b=>b.onclick=()=>{
       if(b.dataset.m==='ruler') openRuler();
+      else if(b.dataset.m==='measure') openMeasure();
       else if(b.dataset.m==='prot') openProtractor();
       else openCalibration();
     });
@@ -40,6 +46,7 @@ const ScreenRuler = (() => {
     if(raf) cancelAnimationFrame(raf); raf=null;
     window.removeEventListener('resize', onResize);
     window.removeEventListener('resize', playout);
+    window.removeEventListener('resize', mResize);
     layer.hidden=true; layer.innerHTML='';
   }
 
@@ -51,7 +58,7 @@ const ScreenRuler = (() => {
 
   function openRuler(){
     const pxCm = getPxCm();
-    shell('屏幕尺子', pxCm?`已校准：${pxCm.toFixed(2)} px/cm`:'尚未校准，请先点右上角「校准」', 'ruler');
+    shell('屏幕尺子', isCal()?`已校准真实值：${pxCm.toFixed(2)} px/cm`:'默认精度（约 96 DPI），点「校准」可更准', 'ruler');
     $('#srBody').innerHTML = `
       <div class="sr-rulerwrap">
         <canvas id="srCv"></canvas>
@@ -94,61 +101,86 @@ const ScreenRuler = (() => {
   function draw(pxCm){
     cx.setTransform(dpr,0,0,dpr,0,0);
     cx.clearRect(0,0,W,H);
-    // 背景
     cx.fillStyle='#0d1628'; cx.fillRect(0,0,W,H);
-    const base = orient==='h' ? 46 : 46;      // 刻度基线位置
-    cx.strokeStyle='#5b739f'; cx.lineWidth=1;
-    cx.font='11px -apple-system,sans-serif'; cx.fillStyle='#9fb0d0';
-
     if(orient==='h'){
-      cx.beginPath(); cx.moveTo(0,base); cx.lineTo(W,base); cx.stroke();
-      if(pxCm>0){
-        for(let cm=0; cm*pxCm<=W; cm++){
-          for(let mm=0; mm<10 && (cm+mm/10)*pxCm<=W; mm++){
-            const x=(cm+mm/10)*pxCm;
-            const len = mm===0?22 : (mm===5?13:7);
-            cx.beginPath(); cx.moveTo(x,base); cx.lineTo(x,base+len); cx.stroke();
-          }
-          if(cm>0){ cx.fillText(String(cm), cm*pxCm+2, base+36); }
-        }
-      } else {
-        cx.fillText('未校准：刻度不可用，但游标间距可在校准后换算', 14, base+30);
-      }
+      drawScale(pxCm, W);
       drawHandleH(p1); drawHandleH(p2);
     } else {
-      cx.beginPath(); cx.moveTo(base,0); cx.lineTo(base,H); cx.stroke();
-      if(pxCm>0){
-        for(let cm=0; cm*pxCm<=H; cm++){
-          for(let mm=0; mm<10 && (cm+mm/10)*pxCm<=H; mm++){
-            const y=(cm+mm/10)*pxCm;
-            const len = mm===0?22 : (mm===5?13:7);
-            cx.beginPath(); cx.moveTo(base,y); cx.lineTo(base+len,y); cx.stroke();
-          }
-          if(cm>0){ cx.save(); cx.translate(base+38,cm*pxCm+4); cx.rotate(Math.PI/2);
-            cx.fillText(String(cm),0,0); cx.restore(); }
-        }
-      }
+      cx.save();
+      cx.translate(0,H); cx.rotate(-Math.PI/2);
+      drawScale(pxCm, H);
+      cx.restore();
       drawHandleV(p1); drawHandleV(p2);
     }
     const dist = Math.abs(p2-p1);
-    const txt = pxCm>0 ? `${(dist/pxCm).toFixed(2)} cm` :
-      `${Math.round(dist)} px（校准后显示厘米）`;
+    const txt = (isCal()?'':'≈ ') + `${(dist/pxCm).toFixed(2)} cm`;
     const el=$('#srRead'); if(el) el.textContent = txt;
   }
-  const HR=24;
+
+  /* 现代简约刻度尺：浅色尺身 + 品牌蓝数字 + 英寸行（贴屏量实物） */
+  function drawScale(pxCm, len){
+    const RH=84;
+    // 尺身：浅灰白渐变 + 顶部品牌蓝细边
+    const g=cx.createLinearGradient(0,0,0,RH);
+    g.addColorStop(0,'#fbfdff'); g.addColorStop(.55,'#eef2f7'); g.addColorStop(1,'#e2e8f0');
+    cx.fillStyle=g; cx.fillRect(0,0,len,RH);
+    cx.fillStyle='#2563eb'; cx.fillRect(0,0,len,3);
+    cx.strokeStyle='#cbd5e1'; cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(0,RH-.5); cx.lineTo(len,RH-.5); cx.stroke();
+
+    cx.textAlign='center'; cx.textBaseline='alphabetic';
+    // 毫米刻度（自顶部蓝边向下）
+    for(let cm=0; cm*pxCm<=len; cm++){
+      for(let mm=0; mm<10 && (cm+mm/10)*pxCm<=len; mm++){
+        const x=(cm+mm/10)*pxCm;
+        const l = mm===0?26 : (mm===5?17:9);
+        cx.strokeStyle = mm===0 ? '#1d4ed8' : '#475569';
+        cx.lineWidth=mm===0?1.8:1;
+        cx.beginPath(); cx.moveTo(x,3); cx.lineTo(x,3+l); cx.stroke();
+      }
+    }
+    // 厘米数字（品牌蓝）
+    cx.fillStyle='#1d4ed8'; cx.font='700 13px -apple-system,sans-serif';
+    for(let cm=0; cm*pxCm<=len-8; cm++){
+      cx.fillText(String(cm), cm*pxCm, 50);
+    }
+    // 英寸行（底部浅带 + 灰字）
+    cx.fillStyle='#f1f5f9'; cx.fillRect(0,RH-18,len,18);
+    cx.strokeStyle='#cbd5e1'; cx.lineWidth=1;
+    cx.beginPath(); cx.moveTo(0,RH-18); cx.lineTo(len,RH-18); cx.stroke();
+    const inPx=pxCm*2.54;
+    cx.font='700 11px -apple-system,sans-serif'; cx.fillStyle='#64748b';
+    for(let i=0; i*inPx<=len-6; i++){
+      const x=i*inPx;
+      cx.strokeStyle='#94a3b8'; cx.lineWidth=1;
+      cx.beginPath(); cx.moveTo(x,RH-7); cx.lineTo(x,RH-1); cx.stroke();
+      cx.fillText(String(i), x, RH-9);
+      if((i+.5)*inPx<=len){
+        cx.beginPath(); cx.moveTo((i+.5)*inPx,RH-4); cx.lineTo((i+.5)*inPx,RH-1); cx.stroke();
+      }
+    }
+    // 单位标注
+    cx.textAlign='left';
+    cx.fillStyle='#64748b'; cx.font='10px -apple-system,sans-serif';
+    cx.fillText(isCal()?'cm / inches':'cm / inches（默认 96DPI）', 6, 64);
+    cx.textAlign='center';
+  }
+  const HR=20, RH=84;
   function drawHandleH(x){
     cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,H);
-    cx.strokeStyle='rgba(110,168,255,.35)'; cx.lineWidth=1; cx.setLineDash([5,5]); cx.stroke(); cx.setLineDash([]);
-    cx.beginPath(); cx.arc(x,46,HR,0,Math.PI*2); cx.fillStyle='#2563eb'; cx.fill();
+    cx.strokeStyle='rgba(110,168,255,.4)'; cx.lineWidth=1; cx.setLineDash([5,5]); cx.stroke(); cx.setLineDash([]);
+    cx.beginPath(); cx.moveTo(x-7,RH); cx.lineTo(x+7,RH); cx.lineTo(x,RH-10); cx.closePath();
+    cx.fillStyle='#6ea8ff'; cx.fill();
+    cx.beginPath(); cx.arc(x,RH+26,HR,0,Math.PI*2); cx.fillStyle='#2563eb'; cx.fill();
     cx.strokeStyle='#fff'; cx.lineWidth=2; cx.stroke();
-    cx.fillStyle='#fff'; cx.font='700 13px sans-serif'; cx.textAlign='center'; cx.textBaseline='middle';
   }
   function drawHandleV(y){
     cx.beginPath(); cx.moveTo(0,y); cx.lineTo(W,y);
-    cx.strokeStyle='rgba(110,168,255,.35)'; cx.lineWidth=1; cx.setLineDash([5,5]); cx.stroke(); cx.setLineDash([]);
-    cx.beginPath(); cx.arc(46,y,HR,0,Math.PI*2); cx.fillStyle='#2563eb'; cx.fill();
+    cx.strokeStyle='rgba(110,168,255,.4)'; cx.lineWidth=1; cx.setLineDash([5,5]); cx.stroke(); cx.setLineDash([]);
+    cx.beginPath(); cx.moveTo(RH,y-7); cx.lineTo(RH,y+7); cx.lineTo(RH-10,y); cx.closePath();
+    cx.fillStyle='#6ea8ff'; cx.fill();
+    cx.beginPath(); cx.arc(RH+26,y,HR,0,Math.PI*2); cx.fillStyle='#2563eb'; cx.fill();
     cx.strokeStyle='#fff'; cx.lineWidth=2; cx.stroke();
-    cx.fillStyle='#fff'; cx.font='700 13px sans-serif'; cx.textAlign='center'; cx.textBaseline='middle';
   }
 
   function pos(e){
@@ -180,6 +212,76 @@ const ScreenRuler = (() => {
     let q=Math.max(0,Math.min(max,pos(e)));
     if(drag===1) p1=q; else p2=q;
     draw(pxCm);
+  }
+
+  /* ---------------- 两点测距（直接量屏幕上任意两点） ---------------- */
+  let mcv, mcx, MW=0, MH=0, mdpr=1, mpts=[];
+  function openMeasure(){
+    const pxCm = getPxCm();
+    shell('屏幕测距', isCal()?`已校准 ${pxCm.toFixed(2)} px/cm，点两点读间距`:'默认精度（约96DPI），点两点读间距；可校准更准', 'measure');
+    $('#srBody').innerHTML = `
+      <div class="sr-measurewrap">
+        <canvas id="srMCv"></canvas>
+        <div class="sr-readout" id="srMRead">👉 点第一点</div>
+        <div class="sr-bar">
+          <button class="tl-btn ghost" id="srMReset">重测</button>
+          <button class="tl-btn primary" id="srMCopy">复制</button>
+        </div>
+      </div>`;
+    mcv=$('#srMCv'); mcx=mcv.getContext('2d');
+    mpts=[]; mLayout();
+    mcv.onpointerdown=e=>{
+      const rc=mcv.getBoundingClientRect();
+      const x=e.clientX-rc.left, y=e.clientY-rc.top;
+      if(mpts.length>=2) mpts=[];
+      mpts.push({x,y});
+      mDraw();
+      try{mcv.setPointerCapture(e.pointerId);}catch(_){}
+    };
+    $('#srMReset').onclick=()=>{ mpts=[]; mDraw(); };
+    $('#srMCopy').onclick=()=>{
+      const t=$('#srMRead').textContent;
+      if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>toast('已复制：'+t,'ok'));
+    };
+    window.addEventListener('resize', mResize);
+  }
+  function mResize(){ mLayout(); }
+  function mLayout(){
+    const r=mcv.parentElement.getBoundingClientRect();
+    mdpr=Math.min(window.devicePixelRatio||1,2);
+    MW=r.width; MH=r.height-64;
+    mcv.style.width=MW+'px'; mcv.style.height=MH+'px';
+    mcv.width=Math.round(MW*mdpr); mcv.height=Math.round(MH*mdpr);
+    mDraw();
+  }
+  function mDraw(){
+    if(!mcx) return;
+    mcx.setTransform(mdpr,0,0,mdpr,0,0);
+    mcx.clearRect(0,0,MW,MH);
+    const pxCm=getPxCm();
+    if(mpts.length>=2){
+      const [a,b]=mpts;
+      mcx.beginPath(); mcx.moveTo(a.x,a.y); mcx.lineTo(b.x,b.y);
+      mcx.strokeStyle='#6ea8ff'; mcx.lineWidth=2; mcx.setLineDash([6,5]); mcx.stroke(); mcx.setLineDash([]);
+      const dpx=Math.hypot(b.x-a.x,b.y-a.y);
+      const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+      const txt = pxCm>0 ? `${(dpx/pxCm).toFixed(2)} cm` : `${Math.round(dpx)} px（校准后显示 cm）`;
+      const w=mcx.measureText(txt).width+18;
+      mcx.font='700 16px sans-serif';
+      mcx.fillStyle='rgba(37,99,235,.92)';
+      const rx=Math.max(2,Math.min(MW-w-2,mid.x-w/2)), ry=Math.max(2,mid.y-32);
+      mcx.beginPath(); mcx.roundRect ? mcx.roundRect(rx,ry,w,24,12) : mcx.rect(rx,ry,w,24); mcx.fill();
+      mcx.fillStyle='#fff'; mcx.textAlign='center'; mcx.textBaseline='middle';
+      mcx.fillText(txt, rx+w/2, ry+12);
+      const el=$('#srMRead'); if(el) el.textContent=txt;
+    } else {
+      const el=$('#srMRead'); if(el) el.textContent = mpts.length ? '👉 点第二点' : '👉 点第一点';
+    }
+    mpts.forEach((p,i)=>{
+      mcx.beginPath(); mcx.arc(p.x,p.y,11,0,Math.PI*2);
+      mcx.fillStyle=i===0?'#6ea8ff':'#ff8f7a'; mcx.fill();
+      mcx.strokeStyle='#fff'; mcx.lineWidth=2; mcx.stroke();
+    });
   }
 
   /* ---------------- 校准 ---------------- */
@@ -331,5 +433,5 @@ const ScreenRuler = (() => {
 
   window.addEventListener('hashchange',()=>{ if(!layer.hidden) close(); });
 
-  return { openRuler, openProtractor, openCalibration, close };
+  return { openRuler, openMeasure, openProtractor, openCalibration, close };
 })();

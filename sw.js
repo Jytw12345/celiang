@@ -1,6 +1,6 @@
 /* 现场测量 PWA 离线缓存
    版本号：发布新版本时改这里（CACHE），旧缓存会自动清理 */
-const CACHE = 'admeasure-v3';
+const CACHE = 'admeasure-v7';
 const ASSETS = [
   './',
   'index.html',
