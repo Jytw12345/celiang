@@ -1,0 +1,17 @@
+{
+  "name": "现场测量",
+  "short_name": "测量",
+  "description": "现场广告/标识安装尺寸测量工具：项目-测量点-尺寸记录-拍照标注-计数-AR/传感器测距测高-报告导出。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1628",
+  "theme_color": "#2563eb",
+  "lang": "zh-CN",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

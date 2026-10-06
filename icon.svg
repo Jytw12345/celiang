@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="现场测量">
+  <rect width="512" height="512" rx="110" fill="#2563eb"/>
+  <g transform="rotate(-8 256 256)">
+    <rect x="96" y="170" width="320" height="172" rx="26" fill="#ffffff"/>
+    <g fill="#2563eb">
+      <rect x="124" y="196" width="6" height="34"/>
+      <rect x="160" y="196" width="6" height="22"/>
+      <rect x="196" y="196" width="6" height="34"/>
+      <rect x="232" y="196" width="6" height="22"/>
+      <rect x="268" y="196" width="6" height="34"/>
+      <rect x="304" y="196" width="6" height="22"/>
+      <rect x="340" y="196" width="6" height="34"/>
+      <rect x="376" y="196" width="6" height="22"/>
+    </g>
+    <path d="M150 300 L362 300" stroke="#2563eb" stroke-width="8" stroke-linecap="round" opacity="0.45"/>
+  </g>
+</svg>

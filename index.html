@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<title>现场尺寸测量</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="现场测量">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/projects">
+        <span class="brand-logo">尺</span>
+        <span class="brand-name">现场测量</span>
+      </a>
+      <nav class="topnav" id="topnav">
+        <a href="#/projects" data-tab="projects">项目</a>
+        <a href="#/tools" data-tab="tools">工具</a>
+        <a href="#/clients" data-tab="clients">客户</a>
+        <a href="#/settings" data-tab="settings">设置</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <button id="fab" class="fab" title="新建项目" hidden>＋</button>
+
+  <nav class="tabbar" id="tabbar">
+    <a href="#/projects" data-tab="projects"><span class="tab-ico">▤</span><span>项目</span></a>
+    <a href="#/tools" data-tab="tools"><span class="tab-ico">🧰</span><span>工具</span></a>
+    <a href="#/clients" data-tab="clients"><span class="tab-ico">◍</span><span>客户</span></a>
+    <a href="#/settings" data-tab="settings"><span class="tab-ico">⚙</span><span>设置</span></a>
+  </nav>
+</div>
+
+<!-- 弹窗容器 -->
+<div id="modal-root"></div>
+<!-- 轻提示 -->
+<div id="toast" class="toast" hidden></div>
+
+<!-- 照片标注编辑器（全屏层） -->
+<div id="editor-layer" class="editor-layer" hidden></div>
+
+<!-- 传感器工具全屏层（水平仪/测高/夹角/步测） -->
+<div id="tool-layer" class="tool-layer" hidden></div>
+
+<!-- AR 测量层 -->
+<div id="ar-layer" class="ar-layer" hidden></div>
+
+<!-- 测量报告打印层 -->
+<div id="report-layer" class="report-layer" hidden></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/db.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/counter.js"></script>
+<script src="js/ruler.js"></script>
+<script src="js/ar.js"></script>
+<script src="js/sensor.js"></script>
+<script src="js/report.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
