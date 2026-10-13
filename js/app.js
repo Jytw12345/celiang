@@ -52,16 +52,20 @@
     }, ms || 2200);
   }
 
-  /* 临时对象 URL 统一管理，切视图时回收，避免泄漏 */
+  /* 临时对象 URL 统一管理：render() 先替换 DOM、再回收旧 URL，避免误撤新图 */
   var _urls = [];
+  var _domUrls = [];
   function objUrl(blob) {
     var u = URL.createObjectURL(blob);
     _urls.push(u);
     return u;
   }
-  function revokeUrls() {
-    _urls.forEach(function (u) { URL.revokeObjectURL(u); });
+  function render(html) {
+    var stale = _domUrls;
+    _domUrls = _urls;
     _urls = [];
+    app.innerHTML = html;
+    stale.forEach(function (u) { URL.revokeObjectURL(u); });
   }
 
   /* ================= 弹窗 ================= */
@@ -234,8 +238,7 @@
         html += emptyBox('还没有测量记录', '点击上方按钮，拍下第一张现场照片开始标注');
       }
       html += '</main>' + tabbar('home');
-      revokeUrls();
-      app.innerHTML = html;
+      render(html);
     });
   }
 
@@ -263,8 +266,7 @@
         html += emptyBox('还没有项目', '点击右上角「新建」创建第一个项目，方便按工地归类');
       }
       html += '</main>' + tabbar('projects');
-      revokeUrls();
-      app.innerHTML = html;
+      render(html);
     });
   }
 
@@ -291,8 +293,7 @@
         }
         html += '<button class="btn primary big" style="margin-top:14px" data-action="project-add-shot" data-id="' + p.id + '">＋ 添加测量</button>' +
           '</main>';
-        revokeUrls();
-        app.innerHTML = html;
+        render(html);
       });
     });
   }
@@ -310,8 +311,7 @@
         html += emptyBox('还没有测量记录', '回到首页，点击「新建测量」开始');
       }
       html += '</main>';
-      revokeUrls();
-      app.innerHTML = html;
+      render(html);
     });
   }
 
@@ -339,8 +339,7 @@
           '<button class="btn" data-action="export-shot" data-id="' + s.id + '">导出图片</button>' +
           '<button class="btn danger-ghost" data-action="delete-shot" data-id="' + s.id + '">删除</button>' +
           '</div></main>';
-        revokeUrls();
-        app.innerHTML = html;
+        render(html);
       });
     });
   }
@@ -356,8 +355,7 @@
       '</header>' +
       '<div class="ed-area" id="ed-area"></div>' +
       '<div class="toolbar" id="toolbar"></div>';
-    revokeUrls();
-    app.innerHTML = html;
+    render(html);
 
     state.editor = CLEditor.createEditor(document.getElementById('ed-area'), {
       blob: state.editorBlob,
@@ -500,6 +498,7 @@
     inp.accept = 'image/*';
     if (camera) inp.setAttribute('capture', 'environment');
     inp.onchange = function () {
+      inp.remove();
       var f = inp.files && inp.files[0];
       if (!f) return;
       toast('处理中…', 4000);
@@ -512,6 +511,9 @@
         toast('图片处理失败，请重试');
       });
     };
+    /* 挂到文档内：部分安卓 WebView 对脱离文档的 input 不触发 change */
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
     inp.click();
   }
 
@@ -567,7 +569,10 @@
           state.shotsCache = null;
           toast('已保存');
           if (shot) {
-            replace('shot', { id: rec.id });
+            /* 重编辑保存：弹掉编辑器层，让底层 shot 视图带新数据重渲染，
+               避免 replace 造成栈内重复的 shot 记录 */
+            state.stack.pop();
+            renderTop();
           } else {
             state.stack.pop();
             go('shot', { id: rec.id });
