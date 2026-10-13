@@ -269,8 +269,7 @@ window.CLEditor = (function () {
       down: null,
       last: null,
       moved: false,
-      dirty: false,
-      lastTap: 0
+      dirty: false
     };
 
     mount.classList.add('ed-mount');
@@ -626,14 +625,9 @@ window.CLEditor = (function () {
         }
         S.penPts = null;
       } else if (!S.moved && S.down) {
-        var now = Date.now();
-        if (now - S.lastTap < 280) {
-          S.lastTap = 0;
-          resetView();
-        } else {
-          S.lastTap = now;
-          handleTap(toNorm(S.down.x, S.down.y));
-        }
+        /* 不加双击判定：快速点两下是测线/比例的核心操作，不能被"双击重置"吞掉；
+           视图复位请用工具栏「复位」按钮 */
+        handleTap(toNorm(S.down.x, S.down.y));
       }
       S.down = null;
       S.last = null;
